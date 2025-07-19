@@ -9,12 +9,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # --- 設定 ---
-# 所有檔案操作都將在這個資料夾內進行
-DATA_DIR = "data"
-# 金鑰檔案的路徑
-API_KEYS_FILE = os.path.join(DATA_DIR, "api_keys.txt")
-# 輸出檔案的目錄
-OUTPUT_DIR = DATA_DIR
+# 金鑰檔案的名稱
+API_KEYS_FILE = "api_keys.txt"
+# 輸出檔案的目錄 ('.' 代表目前目錄)
+OUTPUT_DIR = "."
 # 驗證不同金鑰之間的延遲設定 (秒)
 DELAY = 5.0
 JITTER = 2.0
@@ -22,7 +20,6 @@ JITTER = 2.0
 INTRA_REQUEST_DELAY = 3.1
 
 # 設定日誌
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
     logging.StreamHandler(),
     logging.FileHandler(os.path.join(OUTPUT_DIR, 'validation_log.log'), mode='w')
@@ -61,7 +58,7 @@ class OpenRouterValidator:
                         keys.append(key)
             logger.info(f"成功讀取 {len(keys)} 個金鑰。")
         except FileNotFoundError:
-            logger.error(f"找不到金鑰檔案 {API_KEYS_FILE}。請確保檔案存在於 '{DATA_DIR}' 資料夾中。")
+            logger.error(f"找不到金鑰檔案 {API_KEYS_FILE}。請確保檔案與腳本在同一個目錄中。")
         except Exception as e:
             logger.error(f"讀取金鑰檔案時發生錯誤: {e}")
         return keys
@@ -207,13 +204,7 @@ def main():
     try:
         import requests
     except ImportError:
-        logger.error("缺少 'requests' 套件。請執行 'pip install requests' 來安裝。")
-        return
-
-    # 確保資料目錄存在
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-        logger.warning(f"已建立 '{DATA_DIR}' 資料夾。請將您的 'api_keys.txt' 檔案放入其中。")
+        logger.error("缺少 'requests' 套件。請執行 'pip install -r requirements.txt' 來安裝。")
         return
 
     validator = OpenRouterValidator()

@@ -11,9 +11,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. 複製主要的 Python 腳本
 COPY validate_keys.py .
 
-# 5. 建立資料目錄，以便使用者掛載磁碟區
-# 這也確保了腳本在容器內執行時，'data' 目錄是存在的
-RUN mkdir data
-
-# 6. 設定容器啟動時執行的命令
+# 5. 設定容器啟動時執行的命令
 CMD ["python", "validate_keys.py"]
