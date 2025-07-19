@@ -74,3 +74,35 @@
 
 - 請確保您的 API 金鑰檔案 (`api_keys.txt`) 已被加入到 `.gitignore` 中，以避免意外上傳到公開倉庫。本專案已預設配置好 `.gitignore`。
 - 根據 OpenRouter 的速率限制（特別是 `50 RPD`），建議不要過於頻繁地執行此腳本。預設的延遲設定是為了在安全範圍內操作。
+---
+
+## 使用 Docker 執行
+
+為了簡化環境設定，您也可以使用 Docker 來執行此腳本。
+
+1.  **建置 Docker 映像**
+    在專案根目錄下，執行以下命令來建置 Docker 映像：
+    ```bash
+    docker build -t check-openrouter-keys .
+    ```
+
+2.  **準備資料目錄並執行容器**
+    Docker 容器與您的主機檔案系統是隔離的。您需要透過「磁碟區掛載」的方式，將包含金鑰的檔案提供給容器，並讓容器將結果寫回到您的主機。
+
+    - **建立一個用於交換資料的目錄**（例如 `data`），並將您的金鑰檔案放入其中。
+      ```bash
+      mkdir data
+      # 假設您的金鑰在 api_keys.txt
+      cp api_keys.txt data/
+      ```
+
+    - **執行 Docker 容器**：
+      以下命令會啟動一個容器，並將您主機的 `data` 目錄掛載到容器內的 `/app/data` 目錄。
+      ```bash
+      docker run --rm -v "$(pwd)/data:/app/data" check-openrouter-keys --keys-file /app/data/api_keys.txt --output-dir /app/data
+      ```
+      - `--rm`：容器停止後自動刪除，保持系統乾淨。
+      - `-v "$(pwd)/data:/app/data"`：將您目前路徑下的 `data` 資料夾，掛載到容器內的 `/app` 工作目錄下的 `data` 資料夾。
+      - `--keys-file` 和 `--output-dir` 的路徑必須是**容器內的路徑**，也就是 `/app/data/...`。
+
+    執行完畢後，您會在本地的 `data` 資料夾中找到 `valid_keys.txt`、`invalid_keys.txt` 和 `validation_log.log` 等結果檔案。
