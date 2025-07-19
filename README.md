@@ -1,72 +1,76 @@
-# OpenRouter API 金鑰驗證工具
+# OpenRouter API 金鑰驗證器
 
-[![Python 版本](https://img.shields.io/badge/Python-3.6%2B-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+這是一個 Python 腳本，用於批量驗證 OpenRouter API 金鑰的有效性。它會檢查每個金鑰是否能成功授權，並嘗試使用一個免費模型進行聊天 API 呼叫，以確保金鑰不僅有效且可用。
 
-## 簡介
+## 主要功能
 
-這是一個用於驗證 OpenRouter API 金鑰有效性的 Python 工具。它可以從檔案中讀取多個 API 金鑰，並透過 OpenRouter 的 API 進行基本驗證和聊天功能測試，確保金鑰不僅有效，還能實際用於聊天模型。
+- **批量驗證**：從指定的文字檔案讀取多個 API 金鑰進行驗證。
+- **兩階段驗證**：
+  1.  透過 `/auth/key` 端點進行基本授權驗證。
+  2.  隨機選取一個免費模型，嘗試呼叫聊天 API 進行進階可用性驗證。
+- **速率限制處理**：
+  - 嚴格遵守單一金鑰 20 RPM 的限制（在兩次請求間固定延遲 3.1 秒）。
+  - 在驗證不同金鑰之間加入可配置的隨機延遲，模擬人類行為以避免觸發整體速率限制。
+  - 將 `HTTP 429` (Too Many Requests) 錯誤視為金鑰有效，因為這本身證明了金鑰的有效性。
+- **結果分類**：自動將驗證後的金鑰分類並儲存到 `valid_keys.txt` 和 `invalid_keys.txt`。
+- **詳細日誌**：將詳細的驗證過程記錄到 `validation_log.log` 檔案中，方便追蹤與除錯。
+- **靈活配置**：支援透過命令列參數自訂金鑰檔案、輸出目錄和延遲時間。
 
-## 功能
+## 安裝指南
 
-- **批量驗證**：從 `api_keys.txt` 檔案中讀取多個 API 金鑰並進行驗證。
-- **雙重驗證**：
-  - 基本驗證：檢查金鑰是否能通過 OpenRouter 的認證端點。
-  - 聊天驗證：使用隨機選擇的免費模型進行簡單的聊天測試，確保金鑰能實際使用。
-- **免費模型檢測**：自動從 OpenRouter API 獲取當前可用的免費模型列表，用於聊天驗證。
-- **詳細日誌**：將驗證過程和結果記錄到控制台和 `validation_log.log` 檔案中，方便排查問題。
-- **錯誤處理**：完善的錯誤處理機制，包括網路問題、API 限制和無效回應等情況。
-- **延遲機制**：在驗證多個金鑰時，加入隨機延遲（5-15 秒），避免觸發速率限制。
+1.  **複製倉庫**
+    ```bash
+    git clone https://github.com/leonoxo/Check_OpenRouter_API_Key.git
+    cd Check_OpenRouter_API_Key
+    ```
 
-## 安裝
+2.  **建立並啟用虛擬環境 (建議)**
+    ```bash
+    # Windows
+    python -m venv venv
+    .\venv\Scripts\activate
 
-1. 確保您已安裝 Python 3.6 或更高版本。
-2. 克隆此倉庫或下載 `validate_keys.py` 檔案。
-3. 安裝所需的套件（腳本會自動檢查並安裝）：
-   ```
-   pip install requests
-   ```
+    # macOS / Linux
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+
+3.  **安裝相依套件**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## 使用方法
 
-1. 在與 `validate_keys.py` 相同目錄下創建一個名為 `api_keys.txt` 的檔案。
-2. 在 `api_keys.txt` 中，每行輸入一個 OpenRouter API 金鑰（可以包含註釋行，以 `#` 開頭）。
-   範例：
-   ```
-   # 測試金鑰
-   sk-or-v1-1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-   sk-or-v1-abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
-   ```
-3. 執行腳本：
-   ```
-   python validate_keys.py
-   ```
-4. 查看結果：
-   - 驗證過程和結果會顯示在控制台中。
-   - 詳細日誌會儲存到 `validation_log.log` 檔案中。
-   - 腳本會總結有效和無效金鑰的數量，並列出無效的金鑰。
+1.  **準備 API 金鑰檔案**
+    - 在專案根目錄下建立一個名為 `api_keys.txt` 的檔案（或使用 `--keys-file` 參數指定其他路徑）。
+    - 每行放置一個 API 金鑰。
+    - 以 `#` 開頭的行將被視為註解，會被忽略。
+
+2.  **執行驗證腳本**
+    - **使用預設設定執行：**
+      ```bash
+      python validate_keys.py
+      ```
+    - **使用自訂參數執行：**
+      ```bash
+      python validate_keys.py --keys-file "my_keys.txt" --delay 7 --jitter 3 --output-dir "results/"
+      ```
+
+### 命令列參數說明
+
+- `--keys-file`：指定包含 API 金鑰的檔案路徑。預設為 `api_keys.txt`。
+- `--output-dir`：指定儲存結果檔案（`valid_keys.txt`, `invalid_keys.txt`）的目錄。預設為目前目錄。
+- `--delay`：設定在驗證不同金鑰之間的**基礎延遲時間**（秒）。預設為 `5.0`。
+- `--jitter`：設定延遲時間的**隨機變化範圍**（秒）。實際延遲會在 `delay ± jitter` 之間。預設為 `2.0`。
+
+## 輸出說明
+
+- `valid_keys.txt`：包含所有驗證通過的金鑰（包括因速率限制返回 429 的金鑰）。
+- `invalid_keys.txt`：包含所有驗證失敗的金鑰。
+- `validation_log.log`：包含詳細的執行過程日誌。
 
 ## 注意事項
 
-- 請確保 `api_keys.txt` 檔案與腳本位於同一目錄下。
-- 腳本會自動檢查並安裝所需的 Python 套件（`requests`）。
-- 由於 OpenRouter 的速率限制，腳本在驗證多個金鑰時會加入隨機延遲。
-- 聊天驗證需要至少一個可用的免費模型，如果無法獲取免費模型列表，則無法完成完整驗證。
-- 請勿將包含 API 金鑰的檔案上傳到公開倉庫，建議將 `api_keys.txt` 和 `validation_log.log` 加入 `.gitignore`。
-
-## 貢獻
-
-歡迎提交問題報告和功能建議。如果您希望貢獻程式碼，請遵循以下步驟：
-1. Fork 此倉庫。
-2. 創建您的功能分支 (`git checkout -b feature/AmazingFeature`)。
-3. 提交您的變更 (`git commit -m 'Add some AmazingFeature'`)。
-4. 推送到分支 (`git push origin feature/AmazingFeature`)。
-5. 開啟一個 Pull Request。
-
-## 授權
-
-本專案採用 MIT 授權 - 詳情請見 [LICENSE](LICENSE) 檔案。
-
-## 聯絡方式
-
-如有任何問題或建議，請在 GitHub 上開啟一個 Issue 或聯絡 [leonoxo](https://github.com/leonoxo)。
+- 請確保您的 API 金鑰檔案 (`api_keys.txt`) 已被加入到 `.gitignore` 中，以避免意外上傳到公開倉庫。本專案已預設配置好 `.gitignore`。
+- 根據 OpenRouter 的速率限制（特別是 `50 RPD`），建議不要過於頻繁地執行此腳本。預設的延遲設定是為了在安全範圍內操作。

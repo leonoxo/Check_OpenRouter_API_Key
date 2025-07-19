@@ -4,6 +4,7 @@ import time
 import random
 import logging
 import requests
+import argparse
 from typing import List, Dict, Any
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -23,35 +24,33 @@ class OpenRouterValidator:
     MODELS_ENDPOINT = f"{BASE_URL}/models"
     CHAT_ENDPOINT = f"{BASE_URL}/chat/completions"
     
-    def __init__(self, api_keys_file: str = "api_keys.txt", max_retries: int = 3):
+    def __init__(self, max_retries: int = 3):
         """初始化驗證器"""
-        self.api_keys_file = api_keys_file
         self.session = self._create_session(max_retries)
         self.free_models: List[str] = []
-        
+
     def _create_session(self, max_retries: int) -> requests.Session:
         """創建具有重試機制的 HTTP 會話"""
         session = requests.Session()
-        retries = Retry(total=max_retries, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        # 從重試列表中移除 429，因為我們需要手動處理它
+        retries = Retry(total=max_retries, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
         session.mount('https://', HTTPAdapter(max_retries=retries))
         return session
         
-    def load_api_keys(self) -> List[str]:
+    def load_api_keys(self, api_keys_file: str) -> List[str]:
         """從檔案讀取 API 金鑰"""
         keys = []
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            file_path = os.path.join(script_dir, self.api_keys_file)
-            logger.info(f"正在從 {file_path} 讀取金鑰...")
+            logger.info(f"正在從 {api_keys_file} 讀取金鑰...")
             
-            with open(file_path, 'r') as f:
+            with open(api_keys_file, 'r') as f:
                 for line in f:
                     key = line.strip()
                     if key and not key.startswith('#'):
                         keys.append(key)
             logger.info(f"成功讀取 {len(keys)} 個金鑰。")
         except FileNotFoundError:
-            logger.error(f"找不到金鑰檔案 {file_path}")
+            logger.error(f"找不到金鑰檔案 {api_keys_file}")
         except Exception as e:
             logger.error(f"讀取金鑰檔案時發生錯誤: {e}")
         return keys
@@ -98,6 +97,9 @@ class OpenRouterValidator:
             logger.error(f"金鑰 {masked_key} 基本驗證失敗: {e}")
             return False
             
+        # 根據 20 RPM/金鑰 的限制，在兩次請求之間等待
+        time.sleep(3.1)
+
         # 進階驗證 - 聊天 API 測試
         if not self.free_models:
             logger.warning(f"金鑰 {masked_key} 跳過聊天驗證，因為沒有可用的免費模型列表。")
@@ -134,8 +136,8 @@ class OpenRouterValidator:
                 logger.error(f"金鑰 {masked_key} 使用模型 '{model_id}' 失敗：餘額不足 (402)。")
                 return False
             elif response.status_code == 429:
-                logger.error(f"金鑰 {masked_key} 使用模型 '{model_id}' 失敗：達到速率限制 (429)。")
-                return False
+                logger.warning(f"金鑰 {masked_key} 驗證成功，但已達到速率限制 (429)。")
+                return True
             else:
                 error_msg = f"HTTP {response.status_code} 錯誤"
                 try:
@@ -156,20 +158,20 @@ class OpenRouterValidator:
             logger.error(f"金鑰 {masked_key} 使用模型 '{model_id}' 驗證時發生未預期錯誤: {e}")
             return False
     
-    def validate_all_keys(self) -> tuple[List[str], List[str]]:
+    def validate_all_keys(self, api_keys_file: str, delay: float, jitter: float) -> tuple[List[str], List[str]]:
         """驗證所有 API 金鑰"""
-        api_keys = self.load_api_keys()
+        api_keys = self.load_api_keys(api_keys_file)
         self.get_free_models()
         
         if not api_keys:
-            logger.warning("未從檔案中讀取到任何 API 金鑰。請檢查檔案是否在腳本同目錄下且包含有效的金鑰。")
+            logger.warning("未從檔案中讀取到任何 API 金鑰。")
             return [], []
             
         if not self.free_models:
             logger.error("無法獲取免費模型列表，無法繼續進行聊天驗證。")
             return [], []
             
-        logger.info("\n--- 開始驗證金鑰 ---")
+        logger.info(f"\n--- 開始驗證 {len(api_keys)} 個金鑰 (基礎延遲: {delay}s, 隨機抖動: {jitter}s) ---")
         valid_keys, invalid_keys = [], []
         
         for i, key in enumerate(api_keys, 1):
@@ -178,58 +180,88 @@ class OpenRouterValidator:
             else:
                 invalid_keys.append(key)
             logger.info(f"已驗證 {i}/{len(api_keys)} 個金鑰")
-            logger.info("-" * 30)
             
-            if i < len(api_keys):  # 最後一個金鑰不需要延遲
-                delay = random.uniform(5, 15)
-                logger.info(f"延遲 {delay:.2f} 秒後繼續...")
-                time.sleep(delay)
+            if i < len(api_keys):
+                actual_delay = random.uniform(delay - jitter, delay + jitter)
+                if actual_delay > 0:
+                    logger.info(f"隨機延遲 {actual_delay:.2f} 秒後繼續...")
+                    time.sleep(actual_delay)
+            logger.info("-" * 30)
                 
         return valid_keys, invalid_keys
     
-    def log_results(self, valid_keys: List[str], invalid_keys: List[str]) -> None:
-        """記錄驗證結果"""
+    def log_results(self, valid_keys: List[str], invalid_keys: List[str], output_dir: str) -> None:
+        """記錄驗證結果並將金鑰寫入檔案"""
         logger.info("\n--- 驗證結果 ---")
         logger.info(f"有效的金鑰數量 (通過基本和隨機一個免費模型聊天驗證): {len(valid_keys)}")
         logger.info(f"無效的金鑰數量 (基本驗證失敗或隨機免費模型聊天驗證失敗/跳過): {len(invalid_keys)}")
-        
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 寫入有效的金鑰
+        valid_keys_file = os.path.join(output_dir, 'valid_keys.txt')
+        try:
+            with open(valid_keys_file, 'w') as f:
+                for key in valid_keys:
+                    f.write(f"{key}\n")
+            if valid_keys:
+                logger.info(f"有效的金鑰已儲存至 {valid_keys_file}")
+        except IOError as e:
+            logger.error(f"寫入有效金鑰檔案失敗: {e}")
+
+        # 寫入無效的金鑰
         if invalid_keys:
+            invalid_keys_file = os.path.join(output_dir, 'invalid_keys.txt')
+            try:
+                with open(invalid_keys_file, 'w') as f:
+                    for key in invalid_keys:
+                        f.write(f"{key}\n")
+                logger.info(f"無效的金鑰已儲存至 {invalid_keys_file}")
+            except IOError as e:
+                logger.error(f"寫入無效金鑰檔案失敗: {e}")
+
             logger.info("\n--- 無效的 API 金鑰列表 ---")
             for key in invalid_keys:
                 logger.info(key)
         else:
             logger.info("\n所有金鑰均驗證通過！")
 
-def check_and_setup_environment():
-    """檢查並設置運行環境，包括虛擬環境和所需套件"""
-    import subprocess
-    import sys
-    import os.path
-
-    logger.info("正在檢查運行環境...")
-
-    # 檢查並安裝所需套件（直接在系統環境中）
-    required_packages = ['requests']
-    for pkg in required_packages:
-        logger.info(f"正在檢查套件 {pkg}...")
-        try:
-            __import__(pkg)
-            logger.info(f"套件 {pkg} 已安裝。")
-        except ImportError:
-            logger.info(f"套件 {pkg} 未安裝，正在安裝...")
-            try:
-                subprocess.run(['pip', 'install', pkg], check=True)
-                logger.info(f"套件 {pkg} 安裝成功。")
-            except subprocess.CalledProcessError:
-                logger.error(f"安裝套件 {pkg} 失敗。")
-                sys.exit(1)
-
 def main():
     """主函數"""
-    check_and_setup_environment()
+    parser = argparse.ArgumentParser(description="同步驗證 OpenRouter API 金鑰。")
+    parser.add_argument(
+        "--keys-file",
+        type=str,
+        default="api_keys.txt",
+        help="包含 API 金鑰的檔案路徑。"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=".",
+        help="儲存有效和無效金鑰檔案的目錄。"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=5.0,
+        help="每個金鑰驗證完成後基礎延遲時間（秒）。"
+    )
+    parser.add_argument(
+        "--jitter",
+        type=float,
+        default=2.0,
+        help="延遲的隨機變化範圍（秒）。"
+    )
+    args = parser.parse_args()
+
     validator = OpenRouterValidator()
-    valid_keys, invalid_keys = validator.validate_all_keys()
-    validator.log_results(valid_keys, invalid_keys)
+    valid_keys, invalid_keys = validator.validate_all_keys(
+        api_keys_file=args.keys_file,
+        delay=args.delay,
+        jitter=args.jitter
+    )
+    validator.log_results(valid_keys, invalid_keys, output_dir=args.output_dir)
 
 if __name__ == "__main__":
     main()
