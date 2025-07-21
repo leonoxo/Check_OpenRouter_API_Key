@@ -22,7 +22,7 @@ INTRA_REQUEST_DELAY = 3.1
 # 設定日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
     logging.StreamHandler(),
-    logging.FileHandler(os.path.join(OUTPUT_DIR, 'validation_log.log'), mode='w')
+    logging.FileHandler(os.path.join(OUTPUT_DIR, 'validation.log'), mode='w')
 ])
 logger = logging.getLogger(__name__)
 
