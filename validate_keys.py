@@ -39,7 +39,6 @@ class OpenRouterValidator:
     def __init__(self, max_retries: int = 3):
         """初始化驗證器"""
         self.session = self._create_session(max_retries)
-        self.free_models: List[str] = []
 
     def _create_session(self, max_retries: int) -> requests.Session:
         """創建具有重試機制的 HTTP 會話"""
@@ -65,30 +64,6 @@ class OpenRouterValidator:
             logger.error(f"讀取金鑰檔案時發生錯誤: {e}")
         return keys
     
-    def get_free_models(self) -> List[str]:
-        """從 OpenRouter API 獲取免費模型列表"""
-        if self.free_models:
-            return self.free_models
-        try:
-            logger.info("正在從 OpenRouter 獲取模型列表...")
-            response = self.session.get(self.MODELS_ENDPOINT, timeout=15)
-            response.raise_for_status()
-            models_data = response.json()
-            if 'data' in models_data:
-                self.free_models = [model['id'] for model in models_data['data']
-                                  if isinstance(model, dict) and 'id' in model and ':free' in model['id']]
-                logger.info(f"找到 {len(self.free_models)} 個免費模型: {self.free_models}")
-            else:
-                logger.warning("無法從 API 回應中解析模型數據。")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"獲取模型列表失敗: {e}")
-        except json.JSONDecodeError:
-            logger.error("解析模型列表回應 JSON 失敗。")
-        except Exception as e:
-            logger.error(f"獲取模型列表時發生未預期錯誤: {e}")
-        if not self.free_models:
-            logger.warning("未能獲取到任何免費模型列表，將無法進行聊天驗證。")
-        return self.free_models
     
     def validate_api_key(self, api_key: str) -> bool:
         """驗證單個 API 金鑰"""
@@ -104,13 +79,6 @@ class OpenRouterValidator:
         
         time.sleep(INTRA_REQUEST_DELAY)
 
-        if not self.free_models:
-            logger.warning(f"金鑰 {masked_key} 跳過聊天驗證，因為沒有可用的免費模型列表。")
-            return False
-            
-        # 檢查固定測試模型是否在免費模型列表中
-        if TEST_MODEL not in self.free_models:
-            logger.warning(f"固定測試模型 '{TEST_MODEL}' 不在免費模型列表中。")
             
         chat_headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
         model_id = TEST_MODEL
@@ -148,10 +116,6 @@ class OpenRouterValidator:
         if not api_keys:
             return [], []
         
-        self.get_free_models()
-        if not self.free_models:
-            logger.error("無法獲取免費模型列表，無法繼續進行聊天驗證。")
-            return [], []
             
         logger.info(f"\n--- 開始驗證 {len(api_keys)} 個金鑰 ---")
         valid_keys, invalid_keys = [], []
