@@ -18,6 +18,8 @@ DELAY = 5.0
 JITTER = 2.0
 # 內部請求之間的延遲 (秒)，以符合 20 RPM 的限制
 INTRA_REQUEST_DELAY = 3.1
+# 固定測試模型
+TEST_MODEL = "qwen/qwen3-8b:free"
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[
@@ -106,9 +108,13 @@ class OpenRouterValidator:
             logger.warning(f"金鑰 {masked_key} 跳過聊天驗證，因為沒有可用的免費模型列表。")
             return False
             
+        # 檢查固定測試模型是否在免費模型列表中
+        if TEST_MODEL not in self.free_models:
+            logger.warning(f"固定測試模型 '{TEST_MODEL}' 不在免費模型列表中。")
+            
         chat_headers = {'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'}
-        model_id = random.choice(self.free_models)
-        logger.info(f"金鑰 {masked_key} 隨機選擇免費模型 '{model_id}' 進行聊天驗證...")
+        model_id = TEST_MODEL
+        logger.info(f"金鑰 {masked_key} 使用固定模型 '{model_id}' 進行聊天驗證...")
         payload = {"model": model_id, "messages": [{"role": "user", "content": "Hi"}], "max_tokens": 10}
         
         try:
